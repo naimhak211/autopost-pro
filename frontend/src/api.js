@@ -47,6 +47,15 @@ export const login = async (username, password) => {
   if (data.success) { setToken(data.token); setUserInfo({ username: data.username, role: data.role, user_id: data.user_id }) }
   return data
 }
+export const googleLogin = async (credential) => {
+  const res = await fetch(BASE + '/auth/google', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  })
+  const data = await res.json()
+  if (data.success) { setToken(data.token); setUserInfo({ username: data.username, role: data.role, user_id: data.user_id, picture: data.picture }) }
+  return data
+}
 export const verifyToken = () => req('/auth/verify')
 export const getMe       = () => req('/auth/me')
 export const logout      = () => { setToken(''); setUserInfo(null) }

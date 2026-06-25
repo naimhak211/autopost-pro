@@ -10,6 +10,7 @@ from functools import wraps
 from zoneinfo import ZoneInfo
 import os, json, requests, sqlite3, logging, time, urllib.parse
 
+from google_auth import verify_google_token
 from platforms import (
     facebook_post_video, facebook_post_video_file, facebook_get_pages, facebook_get_page_followers,
     instagram_post_reel, tiktok_post_video, youtube_upload_short,
@@ -42,7 +43,19 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_db():
+def init_db()
+
+# Migrate existing DB — add google columns if missing
+def migrate_db():
+    db = get_db()
+    cols = [r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()]
+    if "google_id" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN google_id TEXT")
+    if "google_picture" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN google_picture TEXT")
+    db.commit()
+
+migrate_db():
     db = get_db()
     db.executescript("""
     CREATE TABLE IF NOT EXISTS users (
@@ -54,6 +67,8 @@ def init_db():
         drive_key_json TEXT,
         credits INTEGER DEFAULT 0,
         is_active INTEGER DEFAULT 1,
+        google_id TEXT,
+        google_picture TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS accounts (
@@ -414,6 +429,56 @@ def run_post_job(schedule_id):
     db.execute("UPDATE schedules SET status='done' WHERE id=?", (schedule_id,))
     db.commit()
     send_telegram(f"<b>AutoPost Pro</b>\n" + "\n".join(results))
+
+
+# ════════════════════════════════════════════════
+# GOOGLE OAUTH
+# ════════════════════════════════════════════════
+@app.route("/api/auth/google", methods=["POST"])
+def auth_google():
+    d = request.json or {}
+    token = d.get("credential") or d.get("token")
+    if not token:
+        return jsonify({"success": False, "error": "Google token পাওয়া যায়নি"}), 400
+
+    info = verify_google_token(token)
+    if not info:
+        return jsonify({"success": False, "error": "Google verification ব্যর্থ হয়েছে"}), 401
+
+    db = get_db()
+    # Check if google_id already exists
+    user = db.execute("SELECT * FROM users WHERE google_id=? AND is_active=1", (info["google_id"],)).fetchone()
+
+    if not user:
+        # Check by email
+        user = db.execute("SELECT * FROM users WHERE email=? AND is_active=1", (info["email"],)).fetchone()
+        if user:
+            # Link Google account to existing user
+            db.execute("UPDATE users SET google_id=?, google_picture=? WHERE id=?",
+                       (info["google_id"], info["picture"], user["id"]))
+            db.commit()
+            user = db.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
+        else:
+            # New user — auto register with Google
+            username = info["email"].split("@")[0]
+            # Make username unique
+            base = username
+            i = 1
+            while db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone():
+                username = f"{base}{i}"; i += 1
+            cur = db.execute(
+                "INSERT INTO users (username, password_hash, email, role, credits, google_id, google_picture) VALUES (?,?,?,?,?,?,?)",
+                (username, generate_password_hash(os.urandom(16).hex()), info["email"], "user", 0, info["google_id"], info["picture"])
+            )
+            db.commit()
+            user = db.execute("SELECT * FROM users WHERE id=?", (cur.lastrowid,)).fetchone()
+
+    token_str = serializer.dumps({"uid": user["id"]})
+    return jsonify({
+        "success": True, "token": token_str,
+        "username": user["username"], "role": user["role"],
+        "user_id": user["id"], "picture": info["picture"],
+    })
 
 # ════════════════════════════════════════════════
 # AUTH ROUTES
