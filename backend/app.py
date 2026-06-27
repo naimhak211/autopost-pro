@@ -44,8 +44,7 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_db()
-register_notification_routes(app, get_db, require_auth, require_admin, g, jsonify, request):
+def init_db():
     db = get_db()
     db.executescript("""
     CREATE TABLE IF NOT EXISTS users (
@@ -172,6 +171,7 @@ register_notification_routes(app, get_db, require_auth, require_admin, g, jsonif
     db.commit()
 
 init_db()
+register_notification_routes(app, get_db, require_auth, require_admin, g, jsonify, request)
 
 # ════════════════════════════════════════════════
 # AUTH
