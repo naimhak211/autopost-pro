@@ -171,7 +171,6 @@ def init_db():
     db.commit()
 
 init_db()
-register_notification_routes(app, get_db, require_auth, require_admin, g, jsonify, request)
 
 # ════════════════════════════════════════════════
 # AUTH
@@ -1225,5 +1224,6 @@ def backup_import():
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
+register_notification_routes(app, get_db, require_auth, require_admin, g, jsonify, request)
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=os.getenv("FLASK_DEBUG","false").lower()=="true")
