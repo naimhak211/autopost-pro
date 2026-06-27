@@ -16,6 +16,7 @@ import AdminUsers    from "./pages/AdminUsers";
 import UserProfile   from "./pages/UserProfile";
 import Login         from "./pages/Login";
 import Sidebar       from "./components/Sidebar";
+import NotificationBell from "./components/NotificationBell";
 import { verifyToken, logout as apiLogout, getUserInfo } from "./api.js";
 import "./App.css";
 
@@ -99,6 +100,9 @@ export default function App() {
         user={user}
       />
       <main className={`main-content ${sidebarOpen ? "shifted" : ""}`}>
+        <div style={{position:"fixed",top:12,right:16,zIndex:999}}>
+          <NotificationBell />
+        </div>
         {pages[page] || <Dashboard />}
       </main>
     </div>

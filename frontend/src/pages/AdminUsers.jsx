@@ -1,23 +1,29 @@
 import { useState, useEffect } from "react";
-import { adminGetUsers, adminCreateUser, adminUpdateUser, adminDeleteUser, adminAddCredits } from "../api.js";
+import { adminGetUsers, adminCreateUser, adminUpdateUser, adminAddCredits } from "../api.js";
+
+const BASE = import.meta.env.VITE_API_URL || "/api";
+const getToken = () => localStorage.getItem("token") || sessionStorage.getItem("token") || "";
 
 const EMPTY = { username:"", password:"", email:"", role:"user", credits:0 };
 
 export default function AdminUsers() {
-  const [users, setUsers]       = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [editUser, setEditUser]  = useState(null);
-  const [form, setForm]          = useState(EMPTY);
-  const [saving, setSaving]      = useState(false);
+  const [users, setUsers]           = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [showModal, setShowModal]   = useState(false);
+  const [editUser, setEditUser]     = useState(null);
+  const [form, setForm]             = useState(EMPTY);
+  const [saving, setSaving]         = useState(false);
   const [creditModal, setCreditModal] = useState(null);
   const [creditAmount, setCreditAmount] = useState("");
+  const [msgModal, setMsgModal]     = useState(null); // null | "all" | user obj
+  const [msgForm, setMsgForm]       = useState({ title:"", message:"" });
+  const [msgSending, setMsgSending] = useState(false);
 
   const load = () => adminGetUsers().then(setUsers).catch(()=>{}).finally(()=>setLoading(false));
   useEffect(load, []);
 
   const openCreate = () => { setForm(EMPTY); setEditUser(null); setShowModal(true); };
-  const openEdit = (u) => { setForm({ username:u.username, password:"", email:u.email||"", role:u.role, credits:u.credits }); setEditUser(u); setShowModal(true); };
+  const openEdit   = (u) => { setForm({ username:u.username, password:"", email:u.email||"", role:u.role, credits:u.credits }); setEditUser(u); setShowModal(true); };
 
   const handleSave = async () => {
     if (!form.username) return alert("Username দিন");
@@ -48,13 +54,36 @@ export default function AdminUsers() {
     setCreditModal(null); setCreditAmount(""); load();
   };
 
+  const handleSendMsg = async () => {
+    if (!msgForm.message.trim()) return alert("Message লিখুন");
+    setMsgSending(true);
+    try {
+      const body = { title: msgForm.title, message: msgForm.message };
+      if (msgModal !== "all") body.user_id = msgModal.id;
+      const res = await fetch(BASE + "/admin/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + getToken() },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.success) { alert("✅ Message পাঠানো হয়েছে!"); setMsgModal(null); setMsgForm({ title:"", message:"" }); }
+      else alert("❌ " + (data.error || "ব্যর্থ"));
+    } catch { alert("❌ Server error"); }
+    setMsgSending(false);
+  };
+
   const up = (k,v) => setForm(f=>({...f,[k]:v}));
 
   return (
     <div className="page">
       <div className="page-header">
         <div><h1>👥 User Management</h1><p className="subtitle">সব user-এর account ও credits পরিচালনা করুন</p></div>
-        <button className="btn-primary" onClick={openCreate}>+ নতুন User</button>
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn-ghost" onClick={()=>{ setMsgModal("all"); setMsgForm({title:"",message:""}); }}>
+            📢 Broadcast
+          </button>
+          <button className="btn-primary" onClick={openCreate}>+ নতুন User</button>
+        </div>
       </div>
 
       {loading ? <div className="empty-state"><div className="pulse-ring"/></div> :
@@ -69,7 +98,9 @@ export default function AdminUsers() {
                 <tr key={u.id}>
                   <td><div className="page-cell">
                     <span className="page-avatar" style={{background: u.role==="admin"?"var(--accent)22":"var(--bg3)"}}>
-                      {u.role==="admin"?"👑":"👤"}
+                      {u.google_picture
+                        ? <img src={u.google_picture} style={{width:28,height:28,borderRadius:"50%"}} alt="" />
+                        : u.role==="admin"?"👑":"👤"}
                     </span>
                     <p className="page-name">{u.username}</p>
                   </div></td>
@@ -84,7 +115,9 @@ export default function AdminUsers() {
                   <td><span className={u.is_active?"status-ok":"status-err"} style={{fontSize:11}}>{u.is_active?"🟢 Active":"🔴 Inactive"}</span></td>
                   <td style={{fontSize:11,color:"var(--muted)"}}>{u.created_at?.slice(0,10)||"—"}</td>
                   <td>
-                    <div style={{display:"flex",gap:6}}>
+                    <div style={{display:"flex",gap:4}}>
+                      <button className="btn-ghost sm" title="Message পাঠান"
+                        onClick={()=>{ setMsgModal(u); setMsgForm({title:"",message:""}); }}>✉️</button>
                       <button className="btn-ghost sm" onClick={()=>openEdit(u)}>✏️</button>
                       <button className="btn-ghost sm" onClick={()=>handleToggleActive(u)}>
                         {u.is_active?"⏸":"▶"}
@@ -124,7 +157,7 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {/* Add Credits Modal */}
+      {/* Credits Modal */}
       {creditModal && (
         <div className="modal-overlay" onClick={()=>setCreditModal(null)}>
           <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -135,6 +168,27 @@ export default function AdminUsers() {
             <div className="modal-actions">
               <button className="btn-ghost" onClick={()=>setCreditModal(null)}>Cancel</button>
               <button className="btn-primary" onClick={handleAddCredits}>💎 Add Credits</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Message Modal */}
+      {msgModal && (
+        <div className="modal-overlay" onClick={()=>setMsgModal(null)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <h2>{msgModal==="all" ? "📢 সব User-কে Broadcast" : `✉️ Message → ${msgModal.username}`}</h2>
+            <label>Title (optional)</label>
+            <input placeholder="যেমন: নতুন আপডেট!" value={msgForm.title} onChange={e=>setMsgForm(f=>({...f,title:e.target.value}))}/>
+            <label>Message *</label>
+            <textarea placeholder="আপনার message লিখুন..." rows={4}
+              value={msgForm.message} onChange={e=>setMsgForm(f=>({...f,message:e.target.value}))}
+              style={{width:"100%",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,padding:"10px 12px",color:"var(--text)",resize:"vertical"}}/>
+            <div className="modal-actions">
+              <button className="btn-ghost" onClick={()=>setMsgModal(null)}>Cancel</button>
+              <button className="btn-primary" onClick={handleSendMsg} disabled={msgSending}>
+                {msgSending?"⏳ পাঠাচ্ছি...":"✉️ পাঠান"}
+              </button>
             </div>
           </div>
         </div>
